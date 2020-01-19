@@ -1,0 +1,94 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Ante Brozovic"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, fig.width=12, fig.height=6)
+```
+
+In this assignment we will be using data from Weight Lifting Exercises Dataset. This dataset includes data from six young health participants that were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Each participant had sensors attached to its arm, forearm, belt and dumbbell. We will use this sensor data to predict wich type of biceps curl participant performed. Dataset comes in csv format already split to training and testing part. So lets assign this datasets to data frames.
+
+```{r}
+training=read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv',na.strings = c("NA",""))
+testing=read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv',na.strings = c("NA",""))
+```
+
+Now we inspect dimensions of our data frames.
+
+```{r}
+dim(training);dim(testing)
+```
+
+There is only 20 observations in testing set and 19622 cases in training set. Both sets are comprised of 160 variables. Lets take a glimpse at a first few.
+
+```{r}
+head(training[,1:15])
+```
+
+There is no class variable in a first few. Lets try last columns.
+
+```{r}
+head(training[,155:160])
+```
+
+The last column contains type of biceps curl participant performed in a given observation. It is named 'classe'. This will be our response variable for classification.
+
+So the first few variables are the participant name, timestamps and window variables. We don't expect much of a prediction value from these and we will remove it from a training set. Also there are quite a few variables with NAs, reportedly variables that start with 'kurtosis', 'skewness' etc. These variables have valid values only if a value of 'new_window' column is 'yes'. Since this occurence is rare in a dataset, we will also remove this variables from training data.
+
+```{r}
+training=training[,-c(1:7)];training=training[,colSums(is.na(training)) == 0]
+dim(training)
+```
+
+We do the same with testing dataset.
+```{r}
+testing=testing[,-c(1:7)];testing=testing[,colSums(is.na(testing)) == 0]
+dim(testing)
+```
+
+So now we deal with 52 sensor predictors and 1 response that have 5 classes (A-E). Here we see frequencies for each class.
+
+```{r}
+plot(training$classe)
+```
+
+Class A is the most frequent, but not significantly more than the other classes.
+
+Now, lets load caret library and try to build some prediction models. We will train our models with 10-fold cross-validation. First classification method that comes into mind is a logistic regression, but we can't use it here because our response has more than 2 class. We will build linear discriminant analysis model instead.
+```{r echo=FALSE}
+library(doParallel)
+cl <- makeCluster(6)
+registerDoParallel(cl)
+```
+
+```{r}
+library(caret)
+set.seed(1234)
+control=trainControl(method = 'cv', number = 10)
+fit.lda=train(classe~.,data = training,trControl=control,method='lda')
+fit.lda
+```
+
+So accuracy of 0.7 doesn't sound promising for a new data where class is unknown. Next, we will try non-parametric approach with k-nearest neighbors.
+
+```{r}
+fit.knn=train(classe~.,data = training,trControl=control,method='knn')
+fit.knn
+```
+
+It seems that 5-nearest neighbors model gives us accuracy of 0.93 for the training dataset, which is a great improvement over LDA. But we are not satisfied yet, because real world test error will surely be more than 7%. Now we will try ensemble tree method with random forest.
+
+```{r}
+fit.rf=train(classe~.,data = training,trControl=control,method='rf')
+fit.rf
+```
+
+So it seems that random forest classifier gives us accuracy of 99.55% on our training set. We shall use this model on our testing dataset.
+
+```{r}
+pred.rf=predict(fit.rf,testing)
+pred.rf
+```
+
